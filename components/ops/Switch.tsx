@@ -14,7 +14,10 @@ type Result = { ok: true } | { ok: false; error: string }
 export function Switch({ on, onChange, label, disabled }: { on: boolean; onChange: (next: boolean) => Promise<Result> | void; label?: string; disabled?: boolean }) {
   const [shown, setShown] = useState(on)
   const [saving, setSaving] = useState(false)
-  useEffect(() => { if (!saving) setShown(on) }, [on, saving])
+  // Follow the store only when IT changes (the pushed row). Re-reading it when
+  // `saving` clears would snap back to the stale value for the moment before
+  // the push arrives — the switch looked refused when it had actually saved.
+  useEffect(() => { setShown(on) }, [on])
   const click = async () => {
     if (disabled || saving) return
     const next = !shown; setShown(next)
