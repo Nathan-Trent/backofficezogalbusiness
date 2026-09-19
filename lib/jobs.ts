@@ -11,7 +11,7 @@ import { sendMail } from '@/lib/mail'
  * retry with a growing gap: 1, 4, 9, 16 minutes… then marks the job dead
  * after max_attempts. Dead jobs show on Health for a person to look at.
  */
-export type JobKind = 'send_email' | 'geolocate' | 'revalidate_site'   // 'renew' | 'remind' arrive with recurring billing
+export type JobKind = 'send_email' | 'geolocate' | 'revalidate_site' | 'renew' | 'remind'
 export interface Job { id: string; kind: JobKind; product: string | null; payload: Record<string, unknown>; attempts: number; max_attempts: number }
 
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://ops.business.zogal.app'
@@ -47,11 +47,15 @@ const HANDLERS: Record<JobKind, (job: Job) => Promise<Record<string, unknown> | 
     const res = await fetch(`${site}/api/revalidate?token=${encodeURIComponent(token)}&path=${encodeURIComponent(String(job.payload.path ?? '/'))}`, { method: 'POST' })
     if (!res.ok) throw new Error(`site said ${res.status}`)
   },
+  async renew() { const { runRenewals } = await import('@/lib/billing'); return runRenewals() },
+  async remind() { const { runReminders } = await import('@/lib/billing'); return runReminders() },
 }
 
 /** Claim and run due jobs. Returns what happened, for the caller's log. */
 export async function runDueJobs(limit = 20): Promise<{ ran: number; failed: number }> {
   const admin = createAdminClient()
+  // Daily billing work is queued by the runner itself, so a schedule that only says "tick" is enough.
+  try { const { ensureDailyJobs } = await import('@/lib/billing'); await ensureDailyJobs() } catch (e) { console.error('ensureDailyJobs:', e) }
   const { data, error } = await admin.rpc('claim_jobs', { p_limit: limit })
   if (error) { console.error('claim_jobs:', error.message); return { ran: 0, failed: 0 } }
   let failed = 0

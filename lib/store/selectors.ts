@@ -3,7 +3,8 @@ import { useTable } from './OpsStore'
 
 /** Row shapes as the store holds them (what the tables actually contain). */
 export interface Shop { id: string; name: string; timezone: string; is_active: boolean; created_at: string }
-export interface Subscription { shop_id: string; status: 'active' | 'past_due' | 'cancelled'; plan: string; expires_at: string | null; auto_renew?: boolean }
+export interface Subscription { shop_id: string; status: 'active' | 'past_due' | 'cancelled'; plan: string; expires_at: string | null; auto_renew: boolean }
+export interface PaymentMethod { id: string; shop_id: string; provider: string; brand: string | null; last4: string | null; exp_month: number | null; exp_year: number | null; revoked_at: string | null; created_at: string }
 export interface Device { id: string; shop_id: string; name: string; last_sync_at: string | null; revoked_at: string | null; activated_at: string }
 export interface Member { shop_id: string; user_id: string; role_id: string; is_active: boolean; joined_at: string }
 export interface Role { id: string; key: string; name: string }
@@ -12,7 +13,7 @@ export interface StaffRow { id: string; email: string; name: string | null; role
 export interface Audit { id: string; actor_id: string; actor_role: string; product: string | null; action: string; summary: string; created_at: string }
 export interface Signin { id: string; user_id: string | null; shop_id: string | null; surface: string; city: string | null; region: string | null; country: string | null; lat: number | null; lng: number | null; created_at: string }
 export interface Conflict { id: string; shop_id: string; device_id: string | null; kind: string; detail: Record<string, unknown>; occurred_at: string; resolved_at: string | null }
-export interface Invoice { id: string; number: string; shop_id: string; plan_key: string; period_start: string; period_end: string; amount: number | string; currency: string; status: 'unpaid' | 'paid' | 'void'; provider: string | null; provider_ref: string | null; paid_at: string | null; created_at: string }
+export interface Invoice { id: string; number: string; shop_id: string; plan_key: string; period_start: string; period_end: string; amount: number | string; currency: string; status: 'unpaid' | 'paid' | 'void'; provider: string | null; provider_ref: string | null; paid_at: string | null; created_at: string; kind?: 'manual' | 'renewal'; charge_attempts?: number; last_charge_error?: string | null }
 export interface Plan { id: string; product: string; key: string; name: string; tagline: string | null; price_monthly: number | string; price_yearly: number | string | null; currency: string; features: string[]; limits: Record<string, number>; highlight: boolean; is_visible: boolean; sort_order: number; updated_at: string }
 export interface Message { id: string; to_user_id: string | null; to_shop_id: string | null; subject: string; status: string; channels: string[]; error: string | null; created_at: string }
 export interface Job { id: string; kind: string; product: string | null; status: string; attempts: number; max_attempts: number; next_run_at: string; last_error: string | null; created_at: string; updated_at: string }

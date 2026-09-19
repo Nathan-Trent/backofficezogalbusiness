@@ -69,7 +69,9 @@ export function Finance() {
               <Td><A href={`/ops/doka/shops/${i.shop_id}`} style={{ color: 'inherit' }}>{shops.get(i.shop_id)?.name ?? '—'}</A></Td>
               <Td>{i.plan_key}<div style={{ fontSize: 11.5, color: 'var(--app-text-muted)' }} className="tabular">{i.period_start} → {i.period_end}</div></Td>
               <Td mono nowrap>₦{Number(i.amount).toLocaleString()}</Td>
-              <Td><span className={`pill ${i.status === 'paid' ? 'pill-good' : i.status === 'void' ? 'pill-plain' : 'pill-warn'}`}>{i.status}</span>{i.status === 'paid' && <div style={{ fontSize: 11.5, color: 'var(--app-text-muted)' }}>{i.provider} · {i.provider_ref} · {i.paid_at ? when(i.paid_at, true) : ''}</div>}</Td>
+              <Td><span className={`pill ${i.status === 'paid' ? 'pill-good' : i.status === 'void' ? 'pill-plain' : 'pill-warn'}`}>{i.status}</span>{i.kind === 'renewal' && <span className="pill pill-plain" style={{ marginLeft: 6 }}>auto</span>}
+                {i.status === 'paid' && <div style={{ fontSize: 11.5, color: 'var(--app-text-muted)' }}>{i.provider} · {i.provider_ref} · {i.paid_at ? when(i.paid_at, true) : ''}</div>}
+                {i.status === 'unpaid' && i.kind === 'renewal' && (i.charge_attempts ?? 0) > 0 && <div style={{ fontSize: 11.5, color: 'var(--status-critical-fg)' }}>card charge failed {i.charge_attempts}×{(i.charge_attempts ?? 0) >= 3 ? ' — stopped trying' : ' — trying again tomorrow'}{i.last_charge_error ? `: ${i.last_charge_error}` : ''}</div>}</Td>
               <Td>{canManage && <InvoiceActions id={i.id} status={i.status} />}</Td>
             </tr>
           ))}

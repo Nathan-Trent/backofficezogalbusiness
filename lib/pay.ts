@@ -70,16 +70,22 @@ export async function startCheckout(provider: Provider, inv: Invoice, email: str
 
 // ---- Verify with the provider (never trust the browser's word) ---------------
 
-type Verified = { ok: true; reference: string; amount: number; currency: string; invoiceId: string | null } | { ok: false; error: string }
+/** A card the provider will let us charge again. We hold only the token and what to show the owner. */
+export interface CardOnFile { token: string; email: string; brand: string | null; last4: string | null; exp_month: number | null; exp_year: number | null; reusable: boolean }
+export type Verified = { ok: true; reference: string; amount: number; currency: string; invoiceId: string | null; card: CardOnFile | null } | { ok: false; error: string }
 
 export async function verifyPaystack(product: string, reference: string): Promise<Verified> {
   const key = await getSecret(product, 'paystack_secret_key')
   if (!key) return { ok: false, error: 'Paystack key missing' }
   const res = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, { headers: { authorization: `Bearer ${key}` } })
-  const j = (await res.json().catch(() => null)) as { status?: boolean; data?: { status?: string; reference?: string; amount?: number; currency?: string; metadata?: { invoice_id?: string } } } | null
+  const j = (await res.json().catch(() => null)) as { status?: boolean; data?: { status?: string; reference?: string; amount?: number; currency?: string; metadata?: { invoice_id?: string }; customer?: { email?: string }; authorization?: { authorization_code?: string; reusable?: boolean; card_type?: string; last4?: string; exp_month?: string; exp_year?: string; channel?: string } } } | null
   if (!res.ok || !j?.status || !j.data) return { ok: false, error: 'Paystack could not verify' }
   if (j.data.status !== 'success') return { ok: false, error: `Payment ${j.data.status}` }
-  return { ok: true, reference: j.data.reference ?? reference, amount: (j.data.amount ?? 0) / 100, currency: j.data.currency ?? 'NGN', invoiceId: j.data.metadata?.invoice_id ?? null }
+  const a = j.data.authorization
+  const card: CardOnFile | null = a?.authorization_code && a.channel === 'card' && j.data.customer?.email
+    ? { token: a.authorization_code, email: j.data.customer.email, brand: a.card_type?.trim() || null, last4: a.last4 ?? null, exp_month: a.exp_month ? Number(a.exp_month) : null, exp_year: a.exp_year ? Number(a.exp_year) : null, reusable: a.reusable !== false }
+    : null
+  return { ok: true, reference: j.data.reference ?? reference, amount: (j.data.amount ?? 0) / 100, currency: j.data.currency ?? 'NGN', invoiceId: j.data.metadata?.invoice_id ?? null, card }
 }
 
 export async function verifyFlutterwave(product: string, txRef: string, txId?: string | number): Promise<Verified> {
@@ -87,10 +93,14 @@ export async function verifyFlutterwave(product: string, txRef: string, txId?: s
   if (!key) return { ok: false, error: 'Flutterwave key missing' }
   const url = txId ? `https://api.flutterwave.com/v3/transactions/${txId}/verify` : `https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=${encodeURIComponent(txRef)}`
   const res = await fetch(url, { headers: { authorization: `Bearer ${key}` } })
-  const j = (await res.json().catch(() => null)) as { status?: string; data?: { status?: string; tx_ref?: string; amount?: number; currency?: string; meta?: { invoice_id?: string } } } | null
+  const j = (await res.json().catch(() => null)) as { status?: string; data?: { status?: string; tx_ref?: string; amount?: number; currency?: string; meta?: { invoice_id?: string }; customer?: { email?: string }; card?: { token?: string; type?: string; last_4digits?: string; expiry?: string } } } | null
   if (!res.ok || j?.status !== 'success' || !j.data) return { ok: false, error: 'Flutterwave could not verify' }
   if (j.data.status !== 'successful') return { ok: false, error: `Payment ${j.data.status}` }
-  return { ok: true, reference: j.data.tx_ref ?? txRef, amount: j.data.amount ?? 0, currency: j.data.currency ?? 'NGN', invoiceId: j.data.meta?.invoice_id ?? null }
+  const c = j.data.card; const [mm, yy] = (c?.expiry ?? '').split('/')
+  const card: CardOnFile | null = c?.token && j.data.customer?.email
+    ? { token: c.token, email: j.data.customer.email, brand: c.type?.trim() || null, last4: c.last_4digits ?? null, exp_month: mm ? Number(mm) : null, exp_year: yy ? 2000 + Number(yy) : null, reusable: true }
+    : null
+  return { ok: true, reference: j.data.tx_ref ?? txRef, amount: j.data.amount ?? 0, currency: j.data.currency ?? 'NGN', invoiceId: j.data.meta?.invoice_id ?? null, card }
 }
 
 /** Paystack signs the raw body with HMAC-SHA512 of the secret key. */
@@ -120,6 +130,11 @@ export async function settle(invoiceId: string, provider: Provider, v: Extract<V
   const { error: aErr } = await admin.rpc('apply_payment', { p_invoice_id: invoiceId, p_provider: provider, p_provider_ref: v.reference })
   if (aErr) return { ok: false, error: aErr.message }
   const shop = (inv.shops as unknown as { name: string } | null)?.name ?? inv.shop_id
+  // Keep the card for next time (idempotent on shop+provider+token). The provider holds the number; we hold a handle.
+  if (v.card?.reusable) {
+    const { error: cErr } = await admin.from('payment_methods').upsert({ shop_id: inv.shop_id, provider, token: v.card.token, email: v.card.email, brand: v.card.brand, last4: v.card.last4, exp_month: v.card.exp_month, exp_year: v.card.exp_year, reusable: true, revoked_at: null }, { onConflict: 'shop_id,provider,token' })
+    if (cErr) console.error('payment_methods upsert:', cErr.message)
+  }
   // No audit row: the log needs a staff actor. The invoice row (provider, ref, paid_at) and the payment notice are the record.
   await notify('doka.payment', { title: `${shop} paid ₦${Number(inv.amount).toLocaleString()}`, body: `${inv.number} · ${provider} · ${v.reference}`, link: `/ops/doka/shops/${inv.shop_id}`, product: 'doka' })
   await emailInvoice(invoiceId)

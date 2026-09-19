@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { A } from '@/lib/nav'
 import { useCan, useRpc, useTable } from '@/lib/store/OpsStore'
-import { byNewest, online, useOwnerByShop, useRolesById, useShopsById, useSubsByShop, useUsersById, type Conflict, type Device, type Member, type Message, type Shop, type Signin, type Subscription, type User } from '@/lib/store/selectors'
+import { byNewest, online, useOwnerByShop, useRolesById, useShopsById, useSubsByShop, useUsersById, type Conflict, type Device, type Member, type Message, type PaymentMethod, type Shop, type Signin, type Subscription, type User } from '@/lib/store/selectors'
 import { OpsTable, PageTitle, Td, when } from '@/components/ops/table'
 import { Fact, Facts, Section, Stat, Stats } from '@/components/ops/layout'
 import { WorldMap } from '@/components/screens/WorldMap'
@@ -109,9 +109,10 @@ export function Shops() {
 export function ShopDetail({ id }: { id: string }) {
   const can = useCan()
   const shop = useShopsById().get(id); const sub = useSubsByShop().get(id)
-  const members = useTable<Member>('shop_members'), devices = useTable<Device>('devices'), conflicts = useTable<Conflict>('sync_conflicts')
+  const members = useTable<Member>('shop_members'), devices = useTable<Device>('devices'), conflicts = useTable<Conflict>('sync_conflicts'), cards = useTable<PaymentMethod>('payment_methods')
   const users = useUsersById(), roles = useRolesById()
   const sales = useRpc<{ by_shop: Record<string, { total: number; receipts: number }> }>('ops_sales_summary', {}, ['shops'])
+  const card = cards.filter((c) => c.shop_id === id && !c.revoked_at).sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
   if (!shop) return <PageTitle title="No such shop" subtitle="It may have been removed, or the link is wrong." />
   const staff = members.filter((m) => m.shop_id === id).map((m) => ({ ...m, user: users.get(m.user_id), role: roles.get(m.role_id) }))
   const devs = devices.filter((d) => d.shop_id === id).sort((a, b) => a.activated_at.localeCompare(b.activated_at))
@@ -135,6 +136,7 @@ export function ShopDetail({ id }: { id: string }) {
           <Fact label="Status" value={sub?.status ?? 'none'} />
           <Fact label="Plan" value={sub?.plan ?? '—'} />
           <Fact label="Expires" value={sub?.expires_at ? when(sub.expires_at, true) : 'no expiry'} />
+          <Fact label="Renewal" value={card ? `${sub?.auto_renew === false ? 'auto-renew OFF · ' : 'automatic · '}${card.brand ?? 'card'} •••• ${card.last4 ?? '????'} (${card.provider})` : 'no card on file — reminders at 7/1/0 days'} />
         </Facts>
         {can('doka.finance.subscriptions') && <div style={{ marginTop: 10 }}><SubscriptionEditor shopId={shop.id} current={sub ?? null} /></div>}
       </Section>
