@@ -18,4 +18,4 @@ export async function proxy(request: NextRequest) {
   return response
 }
 
-export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\.(?:png|jpg|svg|webp)).*)'] }
+export const config = { matcher: ['/((?!api/pay|_next/static|_next/image|favicon.ico|.*\.(?:png|jpg|svg|webp)).*)'] }
