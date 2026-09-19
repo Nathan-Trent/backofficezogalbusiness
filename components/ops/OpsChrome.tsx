@@ -39,6 +39,7 @@ export function companyNav(products: Product[]): NavGroup[] {
     { heading: 'People', links: [
       { href: '/ops/staff', label: 'Staff & permissions', needs: null, rootOnly: true },
       { href: '/ops/notify', label: 'Who is told', needs: null, rootOnly: true },
+      { href: '/ops/keys', label: 'Keys', needs: null, rootOnly: true },
     ] },
   ]
 }

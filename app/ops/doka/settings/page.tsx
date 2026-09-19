@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { PageTitle } from '@/components/ops/table'
 import { Section } from '@/components/ops/layout'
 import { OpsSettingsForm, PlatformSettingRow } from './Forms'
+import { SecretRows } from '@/components/ops/SecretRows'
+import { listSecrets } from '@/lib/secrets'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,16 +21,20 @@ const OPS_FIELDS = [
 export default async function SettingsPage() {
   await requireCap('doka.settings.manage')
   const admin = createAdminClient()
-  const [{ data: ps, error: pErr }, { data: os, error: oErr }, { data: hist, error: hErr }] = await Promise.all([
+  const [{ data: ps, error: pErr }, { data: os, error: oErr }, { data: hist, error: hErr }, secrets] = await Promise.all([
     admin.from('platform_settings').select('key, value, description, updated_at').order('key'),
     admin.from('operational_settings').select('settings, updated_at').eq('id', 1).single(),
     admin.from('platform_settings_history').select('key, old_value, new_value, changed_at').order('changed_at', { ascending: false }).limit(20),
+    listSecrets('doka').catch(() => []),
   ])
   if (pErr || oErr || hErr) return <p style={{ color: 'var(--status-critical-fg)' }}>{(pErr ?? oErr ?? hErr)!.message}</p>
   return (
     <>
       <PageTitle title="Doka settings" subtitle="Business-side keys. Changes apply to every shop immediately and are logged." />
-      <Section title="Platform settings" note="Feature switches and allowances. The partner web shop-app switch lives here (pos_web.enabled)." first>
+      <Section title="Keys" note="Third-party keys Doka uses: payments (Paystack, Flutterwave) and notebook reading (Anthropic). Write-only — a key can be replaced or cleared, never read back. Company-wide keys such as Resend live under Zogal Business → Keys." first>
+        <SecretRows product="doka" secrets={secrets} />
+      </Section>
+      <Section title="Platform settings" note="Feature switches and allowances. The partner web shop-app switch lives here (pos_web.enabled).">
         <div style={{ display: 'grid', gap: 8 }}>
           {(ps ?? []).map((s) => <PlatformSettingRow key={s.key as string} setting={s as { key: string; value: unknown; description: string; updated_at: string }} />)}
         </div>

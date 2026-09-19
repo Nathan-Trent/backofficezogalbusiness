@@ -11,12 +11,15 @@ export interface EventDef { key: string; group: 'company' | 'marketing' | 'doka'
 export const EVENTS: EventDef[] = [
   { key: 'company.failure', group: 'company', label: 'Something failed', help: 'A send, a job, a server error. What the Health screen shows.' },
   { key: 'company.staff', group: 'company', label: 'Staff changed', help: 'Someone was invited, changed or deactivated.' },
+  { key: 'company.settings', group: 'company', label: 'A company key changed', help: 'A company-wide key (Resend) was set or cleared.' },
   { key: 'doka.signup', group: 'doka', label: 'A new Doka shop', help: 'Someone created a shop.' },
   { key: 'doka.signin', group: 'doka', label: 'A Doka sign-in', help: 'Someone signed in to the dashboard or the shop app. Noisy — bell only is wise.' },
   { key: 'doka.payment', group: 'doka', label: 'A Doka payment', help: 'A subscription was paid.' },
   { key: 'doka.subscription', group: 'doka', label: 'A Doka subscription changed', help: 'Set, extended, cancelled or expired.' },
   { key: 'doka.sync_conflicts', group: 'doka', label: 'Doka sync issues piling up', help: 'A shop has 5 or more unresolved sync conflicts.' },
   { key: 'doka.impersonation', group: 'doka', label: 'Someone signed in as a Doka user', help: 'Every impersonation, with who and why.' },
+  { key: 'doka.settings', group: 'doka', label: 'A Doka key or setting changed', help: 'A payment, Anthropic or other key was set or cleared.' },
+  { key: 'doka.published', group: 'doka', label: 'Doka plans published', help: 'Plans and prices went live for the app and the site.' },
   { key: 'marketing.contact', group: 'marketing', label: 'A message from the site', help: 'Someone wrote through the contact form.' },
   { key: 'marketing.published', group: 'marketing', label: 'The site was published', help: 'Someone made site changes live.' },
 ]

@@ -34,9 +34,11 @@ export function renderEmail(id: Identity, subject: string, text: string): string
 }
 
 export async function sendMail(input: { to: string; subject: string; text: string; identity: string | 'business' }): Promise<{ ok: boolean; error?: string }> {
-  const key = process.env.RESEND_API_KEY
+  // Key from product_secrets (product's own, else company-wide), env as fallback.
+  const { getSecret } = await import('@/lib/secrets')
+  const key = await getSecret(input.identity === 'business' ? '' : input.identity, 'resend_api_key')
   const from = process.env.MAIL_FROM ?? 'Zogal <hello@getzogal.com>'
-  if (!key) return { ok: false, error: 'RESEND_API_KEY not set' }
+  if (!key) return { ok: false, error: 'Resend key not set — Zogal Business → Keys' }
   try {
     const id = await identityFor(input.identity)
     const resend = new Resend(key)
