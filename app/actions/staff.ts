@@ -1,12 +1,10 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { getOperator } from '@/lib/auth/operator'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { recordAction } from '@/lib/audit'
 import { notify } from '@/lib/notify'
 import { ALL_CAPABILITIES } from '@/lib/auth/capabilities'
-import { sendMail } from '@/lib/mail'
 
 type Result = { ok: true } | { ok: false; error: string }
 
@@ -31,12 +29,12 @@ export async function inviteStaff(input: { email: string; name: string; capabili
   const { error: iErr } = await admin.auth.admin.inviteUserByEmail(email, { data: { full_name: input.name.trim() }, redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/login` })
   if (iErr && !/already/i.test(iErr.message)) return { ok: false, error: `Staff row saved, but the invite email failed: ${iErr.message}` }
   if (iErr) {
-    await sendMail({ to: email, subject: 'You have access to the Zogal Business back office', text: `${op.name ?? 'Zogal'} added you to the Zogal Business back office. Sign in with your existing Zogal account at ${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/login.`, identity: 'business' })
+    const { enqueue } = await import('@/lib/jobs')
+    await enqueue('send_email', { to: email, subject: 'You have access to the Zogal Business back office', text: `${op.name ?? 'Zogal'} added you to the Zogal Business back office. Sign in with your existing Zogal account at ${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/login.`, identity: 'business' }, { createdBy: op.userId })
   }
 
   await recordAction(op, { action: 'staff.invite', summary: `Invited ${email} with ${caps.length} switch${caps.length === 1 ? '' : 'es'}`, targetType: 'staff', targetId: email, detail: { capabilities: caps } })
   await notify('company.staff', { title: `Staff: ${email} invited`, body: `By ${op.name ?? op.email}. ${caps.length} switches.`, link: '/ops/staff' })
-  revalidatePath('/ops/staff')
   return { ok: true }
 }
 
@@ -52,7 +50,6 @@ export async function setStaffCapabilities(staffId: string, capabilities: string
   const { error } = await admin.from('staff').update({ capabilities: caps }).eq('id', staffId)
   if (error) return { ok: false, error: error.message }
   await recordAction(op, { action: 'staff.capabilities', summary: `Set ${caps.length} switches for ${row.email}`, targetType: 'staff', targetId: staffId, detail: { capabilities: caps } })
-  revalidatePath('/ops/staff')
   return { ok: true }
 }
 
@@ -67,6 +64,5 @@ export async function setStaffActive(staffId: string, active: boolean): Promise<
   if (error) return { ok: false, error: error.message }
   await recordAction(op, { action: active ? 'staff.reactivate' : 'staff.deactivate', summary: `${active ? 'Reactivated' : 'Deactivated'} ${row?.email ?? staffId}`, targetType: 'staff', targetId: staffId })
   await notify('company.staff', { title: `Staff: ${row?.email ?? staffId} ${active ? 'reactivated' : 'deactivated'}`, body: `By ${op.name ?? op.email}.`, link: '/ops/staff' })
-  revalidatePath('/ops/staff')
   return { ok: true }
 }

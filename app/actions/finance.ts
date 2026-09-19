@@ -1,15 +1,12 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { assertCap } from '@/lib/auth/operator'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { recordAction } from '@/lib/audit'
 import { notify } from '@/lib/notify'
-import { sendMail } from '@/lib/mail'
 
 type Result = { ok: true; data?: unknown } | { ok: false; error: string }
 const P = 'doka'
-const SITE = process.env.NEXT_PUBLIC_MARKETING_URL ?? 'https://business.getzogal.com'
 
 // ---- Plans: Save is a draft, Publish is the promise ------------------------
 
@@ -39,7 +36,6 @@ export async function savePlanDraft(p: PlanDraft): Promise<Result> {
   const { data, error } = await q
   if (error) return { ok: false, error: error.message.includes('duplicate') ? `A plan with key "${p.key}" already exists` : error.message }
   await recordAction(op, { action: 'plan.draft', product: P, summary: `Drafted plan "${p.name}" (${p.key}) ₦${p.price_monthly}/mo`, targetType: 'plan', targetId: data.id as string })
-  revalidatePath(`/ops/${P}/finance/plans`)
   return { ok: true, data: { id: data.id } }
 }
 
@@ -51,7 +47,6 @@ export async function deletePlanDraft(id: string): Promise<Result> {
   const { data, error } = await admin.from('pricing_plans_draft').delete().eq('id', id).eq('product', P).select('name, key').maybeSingle()
   if (error) return { ok: false, error: error.message }
   await recordAction(op, { action: 'plan.draft_delete', product: P, summary: `Removed plan "${data?.name ?? id}" from the draft`, targetType: 'plan', targetId: id })
-  revalidatePath(`/ops/${P}/finance/plans`)
   return { ok: true }
 }
 
@@ -66,7 +61,6 @@ export async function discardPlanDrafts(): Promise<Result> {
   if (lErr) return { ok: false, error: lErr.message }
   if (live?.length) { const { error } = await admin.from('pricing_plans_draft').insert(live); if (error) return { ok: false, error: error.message } }
   await recordAction(op, { action: 'plan.draft_discard', product: P, summary: 'Discarded plan drafts; draft now matches live' })
-  revalidatePath(`/ops/${P}/finance/plans`)
   return { ok: true }
 }
 
@@ -81,10 +75,9 @@ export async function publishPlans(note: string): Promise<Result> {
   await admin.from('catalogue_publish').update({ published_by: op.userId }).eq('product', P).eq('version', version as number)
   await recordAction(op, { action: 'plan.publish', product: P, summary: `Published Doka plans, version ${version}${note ? ` — ${note.trim()}` : ''}` })
   await notify(`${P}.published`, { title: `Doka plans published (v${version})`, body: note.trim() || `by ${op.name ?? op.email}`, link: `/ops/${P}/finance/plans`, product: P })
-  // Ask the marketing site to drop its cached pricing. Best effort; it re-fetches within 10 minutes anyway.
-  const token = process.env.SITE_REVALIDATE_TOKEN
-  if (token) { try { await fetch(`${SITE}/api/revalidate?token=${encodeURIComponent(token)}&path=/doka`, { method: 'POST' }) } catch { /* next fetch */ } }
-  revalidatePath(`/ops/${P}/finance/plans`); revalidatePath(`/ops/${P}/finance`)
+  // Ask the marketing site to drop its cached pricing — as a job, retried if the site is slow.
+  const { enqueue } = await import('@/lib/jobs')
+  await enqueue('revalidate_site', { path: '/doka' }, { product: P, createdBy: op.userId, maxAttempts: 3 })
   return { ok: true, data: { version } }
 }
 
@@ -107,7 +100,6 @@ export async function createInvoice(input: { shopId: string; planKey: string; mo
   if (error) return { ok: false, error: error.message }
   await recordAction(op, { action: 'invoice.create', product: P, summary: `Invoice ${inv.number}: ${plan.name} × ${input.months} month${input.months > 1 ? 's' : ''}, ₦${amount.toLocaleString()}`, targetType: 'invoice', targetId: inv.id as string })
   await emailInvoice(inv.id as string)
-  revalidatePath(`/ops/${P}/finance`); revalidatePath(`/ops/${P}/shops/${input.shopId}`)
   return { ok: true, data: { id: inv.id, number: inv.number } }
 }
 
@@ -126,8 +118,9 @@ export async function emailInvoice(invoiceId: string): Promise<Result> {
   const text = paid
     ? `Receipt ${inv.number} for ${shop}.\n\nPlan: ${inv.plan_key}\nPeriod: ${inv.period_start} to ${inv.period_end}\nAmount: ₦${Number(inv.amount).toLocaleString()} — paid.\n\nThank you. Your subscription runs to ${inv.period_end}.`
     : `Invoice ${inv.number} for ${shop}.\n\nPlan: ${inv.plan_key}\nPeriod: ${inv.period_start} to ${inv.period_end}\nAmount due: ₦${Number(inv.amount).toLocaleString()}\n\nPay from your dashboard: ${app}/subscription\n\nYour shop keeps working during the grace period after expiry; after that terminals go read-only until it is paid.`
-  const r = await sendMail({ to: owner.email as string, subject: paid ? `Receipt ${inv.number} — ${shop}` : `Invoice ${inv.number} — ${shop}`, text, identity: P })
-  return r.ok ? { ok: true } : { ok: false, error: r.error ?? 'email failed' }
+  const { enqueue } = await import('@/lib/jobs')
+  const id = await enqueue('send_email', { to: owner.email as string, subject: paid ? `Receipt ${inv.number} — ${shop}` : `Invoice ${inv.number} — ${shop}`, text, identity: P }, { product: P })
+  return id ? { ok: true } : { ok: false, error: 'could not queue the email' }
 }
 
 /** Mark paid by hand (bank transfer, cash). Same rule as the webhooks: apply_payment. */
@@ -144,7 +137,6 @@ export async function markInvoicePaid(input: { invoiceId: string; reference: str
   await recordAction(op, { action: 'invoice.paid_manual', product: P, summary: `${inv.number} marked paid by hand (${ref}) — ${shop}, ₦${Number(inv.amount).toLocaleString()}`, targetType: 'invoice', targetId: input.invoiceId })
   await notify(`${P}.payment`, { title: `${shop} paid ₦${Number(inv.amount).toLocaleString()}`, body: `${inv.number} · by hand · ref ${ref}`, link: `/ops/${P}/shops/${inv.shop_id}`, product: P })
   await emailInvoice(input.invoiceId)
-  revalidatePath(`/ops/${P}/finance`); revalidatePath(`/ops/${P}/shops/${inv.shop_id}`)
   return { ok: true }
 }
 
@@ -156,6 +148,5 @@ export async function voidInvoice(invoiceId: string): Promise<Result> {
   if (error) return { ok: false, error: error.message }
   if (!data) return { ok: false, error: 'Only an unpaid invoice can be voided' }
   await recordAction(op, { action: 'invoice.void', product: P, summary: `Voided ${data.number}`, targetType: 'invoice', targetId: invoiceId })
-  revalidatePath(`/ops/${P}/finance`); revalidatePath(`/ops/${P}/shops/${data.shop_id}`)
   return { ok: true }
 }

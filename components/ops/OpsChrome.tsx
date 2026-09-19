@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Bell } from './Bell'
+import { A } from '@/lib/nav'
+import { useOps, useTable } from '@/lib/store/OpsStore'
 
 /**
  * The operator's frame — the sidebar rule from zogal.app kept exactly:
@@ -64,10 +65,10 @@ export function productNav(p: Product): NavGroup[] {
   ]
 }
 
-export function OpsChrome({ children, capabilities, isRoot, operatorName, products, bell }: {
-  children: React.ReactNode; capabilities: string[]; isRoot: boolean; operatorName: string | null; products: Product[]
-  bell: { items: { id: string; title: string; body: string | null; link: string | null; read_at: string | null; created_at: string }[]; unread: number }
-}) {
+export function OpsChrome({ children }: { children: React.ReactNode }) {
+  const { operator, live, ready } = useOps()
+  const capabilities = operator.capabilities, isRoot = operator.isRoot, operatorName = operator.name ?? operator.email
+  const products = useTable<Product & { is_active: boolean; sort_order: number }>('products').filter((p) => p.is_active).sort((a, b) => a.sort_order - b.sort_order)
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
   const [closed, setClosed] = useState<string[]>([])
@@ -93,8 +94,8 @@ export function OpsChrome({ children, capabilities, isRoot, operatorName, produc
   return (
     <div className={`ops-frame${product ? ' product-world' : ''}`} style={frameStyle}>
       <header className="ops-bar">
-        <Link href={home} style={brandStyle}>{brand}</Link>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}><Bell items={bell.items} unread={bell.unread} /></span>
+        <A href={home} style={brandStyle}>{brand}</A>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}><Bell /></span>
         <button type="button" onClick={() => setMenuOpen((o) => !o)} aria-expanded={menuOpen} aria-label={menuOpen ? 'Close menu' : 'Open menu'}
           style={{ display: 'grid', placeItems: 'center', width: 44, height: 44, marginRight: -10, fontSize: 18, background: 'transparent', border: 'none', color: 'var(--app-text-primary)', cursor: 'pointer' }}>
           {menuOpen ? '✕' : '☰'}
@@ -102,7 +103,7 @@ export function OpsChrome({ children, capabilities, isRoot, operatorName, produc
       </header>
 
       <nav className="ops-nav" data-open={menuOpen ? 'true' : 'false'} style={{ padding: '22px 16px', background: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
-        <Link href={home} className="ops-nav-brand" style={{ ...brandStyle, marginBottom: 6 }}>{brand}</Link>
+        <A href={home} className="ops-nav-brand" style={{ ...brandStyle, marginBottom: 6 }}>{brand}</A>
         <span className="ops-nav-brand" style={{ fontSize: 11, color: 'var(--app-text-muted)', marginBottom: 22 }}>{product ? 'A Zogal Business product' : 'Back office'}</span>
 
         {groups.map((group) => {
@@ -122,10 +123,10 @@ export function OpsChrome({ children, capabilities, isRoot, operatorName, produc
                     const on = isActive(l.href)
                     return (
                       <li key={l.href}>
-                        <Link href={l.href} aria-current={on ? 'page' : undefined}
+                        <A href={l.href} aria-current={on ? 'page' : undefined}
                           style={{ display: 'block', padding: '7px 10px', fontSize: 14, fontWeight: on ? 600 : 400, borderRadius: 'var(--r-sm)', textDecoration: 'none', color: on ? 'var(--accent)' : 'var(--app-text-secondary)', background: on ? 'var(--accent-dim)' : 'transparent' }}>
                           {l.label}
-                        </Link>
+                        </A>
                       </li>
                     )
                   })}
@@ -141,9 +142,9 @@ export function OpsChrome({ children, capabilities, isRoot, operatorName, produc
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 2 }}>
               {products.filter((p) => capabilities.some((c) => c.startsWith(`${p.key}.`))).map((p) => (
                 <li key={p.key}>
-                  <Link href={`/ops/${p.key}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', fontSize: 14, fontWeight: 600, borderRadius: 'var(--r-sm)', textDecoration: 'none', color: 'var(--app-text-primary)' }}>
+                  <A href={`/ops/${p.key}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', fontSize: 14, fontWeight: 600, borderRadius: 'var(--r-sm)', textDecoration: 'none', color: 'var(--app-text-primary)' }}>
                     <span style={{ width: 10, height: 10, borderRadius: 3, background: p.colour, display: 'inline-block' }} />{p.name}
-                  </Link>
+                  </A>
                 </li>
               ))}
             </ul>
@@ -152,16 +153,19 @@ export function OpsChrome({ children, capabilities, isRoot, operatorName, produc
 
         {doors.length > 0 ? (
           <div style={{ marginTop: 'auto', paddingTop: 16, borderTop: '1px solid var(--border-subtle)', display: 'grid', gap: 2 }}>
-            {doors.map((d) => <Link key={d.href} href={d.href} style={{ display: 'block', padding: '7px 10px', fontSize: 13, fontWeight: 600, borderRadius: 'var(--r-sm)', textDecoration: 'none', color: 'var(--app-text-primary)' }}>{d.label}</Link>)}
+            {doors.map((d) => <A key={d.href} href={d.href} style={{ display: 'block', padding: '7px 10px', fontSize: 13, fontWeight: 600, borderRadius: 'var(--r-sm)', textDecoration: 'none', color: 'var(--app-text-primary)' }}>{d.label}</A>)}
           </div>
         ) : null}
       </nav>
 
       <main className="ops-main">
         <div className="ops-top">
-          <span style={{ fontSize: 12.5, color: 'var(--app-text-muted)' }}>{operatorName ? `Signed in as ${operatorName}` : ''}{isRoot ? ' · root' : ''}</span>
+          <span style={{ fontSize: 12.5, color: 'var(--app-text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="live-dot" data-state={live} title={live === 'live' ? 'Live — changes arrive as they happen' : live === 'lost' ? 'Connection lost — reconnecting' : 'Connecting…'} />
+            {operatorName ? `Signed in as ${operatorName}` : ''}{isRoot ? ' · root' : ''}{!ready && ' · loading…'}
+          </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Bell items={bell.items} unread={bell.unread} />
+            <Bell />
             <form action="/ops/signout" method="post"><button className="btn btn-ghost btn-sm" type="submit">Sign out</button></form>
           </span>
         </div>

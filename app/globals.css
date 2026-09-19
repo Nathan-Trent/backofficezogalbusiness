@@ -124,6 +124,18 @@ textarea.ops-input { height: auto; padding: 10px 12px; min-height: 120px; resize
 .switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
 .switch[data-on='true']::after { transform: translateX(16px); }
 .switch:disabled { opacity: .5; cursor: wait; }
+/* Saving: the knob keeps its new position and a ring runs round it. The cursor is never held. */
+.switch[data-saving='true'] { cursor: default; }
+.switch[data-saving='true']::after { box-shadow: 0 0 0 2px var(--accent-dim); animation: ring 1s linear infinite; }
+@keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(255,255,255,.55); } 100% { box-shadow: 0 0 0 6px rgba(255,255,255,0); } }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn[data-busy='true'] { cursor: default; opacity: .85; }
+.live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--status-on-track-fg); box-shadow: 0 0 0 0 var(--status-on-track-fg); animation: ring 2s ease-out infinite; }
+.live-dot[data-state='connecting'] { background: var(--status-approaching-fg); animation: none; }
+.live-dot[data-state='lost'] { background: var(--status-critical-fg); animation: none; }
+.skeleton { background: linear-gradient(90deg, var(--surface) 25%, var(--surface-raised) 50%, var(--surface) 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: var(--r-sm); }
+@keyframes shimmer { to { background-position: -200% 0; } }
 
 /* Pills */
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }

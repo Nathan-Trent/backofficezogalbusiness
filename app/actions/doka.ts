@@ -1,11 +1,9 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { assertCap, getOperator } from '@/lib/auth/operator'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { recordAction } from '@/lib/audit'
 import { notify } from '@/lib/notify'
-import { sendMail } from '@/lib/mail'
 
 type Result = { ok: true; data?: unknown } | { ok: false; error: string }
 const P = 'doka'
@@ -42,20 +40,18 @@ export async function sendMessage(input: { toUserId?: string; toShopId?: string;
   }).select('id').single()
   if (mErr) return { ok: false, error: mErr.message }
 
+  // In-app notices land now; emails go out as background jobs (retried, never block the screen).
   let failed: string | null = null
+  const { enqueue } = await import('@/lib/jobs')
   for (const u of users) {
     if (input.channels.includes('in_app')) {
       const { error } = await admin.from('user_notices').insert({ user_id: u.id, product: P, message_id: msg.id, title: subject, body })
       if (error) failed = error.message
     }
-    if (input.channels.includes('email')) {
-      const r = await sendMail({ to: u.email, subject, text: body, identity: P })
-      if (!r.ok) failed = r.error ?? 'email failed'
-    }
+    if (input.channels.includes('email')) await enqueue('send_email', { to: u.email, subject, text: body, identity: P, message_id: msg.id }, { product: P, createdBy: op.userId })
   }
-  await admin.from('messages').update({ status: failed ? 'failed' : 'sent', error: failed, sent_at: new Date().toISOString() }).eq('id', msg.id)
+  if (!input.channels.includes('email')) await admin.from('messages').update({ status: failed ? 'failed' : 'sent', error: failed, sent_at: new Date().toISOString() }).eq('id', msg.id)
   await recordAction(op, { action: failed ? 'message.failed' : 'message.sent', product: P, summary: `Messaged ${users.length === 1 ? users[0].email : `${users.length} people at a shop`}: "${subject}"${failed ? ` — ${failed}` : ''}`, targetType: input.toUserId ? 'user' : 'shop', targetId: input.toUserId ?? input.toShopId })
-  revalidatePath(`/ops/${P}/users`)
   return failed ? { ok: false, error: `Sent with problems: ${failed}` } : { ok: true }
 }
 
@@ -98,7 +94,6 @@ export async function revokeTerminal(deviceId: string): Promise<Result> {
   const { data, error } = await admin.from('devices').update({ revoked_at: new Date().toISOString() }).eq('id', deviceId).select('name, shop_id').single()
   if (error) return { ok: false, error: error.message }
   await recordAction(op, { action: 'terminal.revoke', product: P, summary: `Revoked terminal "${data.name}"`, targetType: 'device', targetId: deviceId })
-  revalidatePath(`/ops/${P}/terminals`); revalidatePath(`/ops/${P}/shops/${data.shop_id}`)
   return { ok: true }
 }
 
@@ -114,7 +109,6 @@ export async function setSubscription(input: { shopId: string; status: 'active' 
   if (nErr) console.error(nErr.message)
   await recordAction(op, { action: 'subscription.set', product: P, summary: `${shop?.name ?? input.shopId}: ${input.status}, ${input.plan}, ${input.expiresAt ? `expires ${input.expiresAt.slice(0, 10)}` : 'no expiry'}`, targetType: 'shop', targetId: input.shopId })
   await notify(`${P}.subscription`, { title: `${shop?.name ?? 'A shop'}: subscription ${input.status}`, body: `${input.plan} · ${input.expiresAt ? `expires ${input.expiresAt.slice(0, 10)}` : 'no expiry'} · by ${op.name ?? op.email}`, link: `/ops/${P}/shops/${input.shopId}`, product: P })
-  revalidatePath(`/ops/${P}/shops/${input.shopId}`); revalidatePath(`/ops/${P}/shops`)
   return { ok: true }
 }
 
@@ -125,7 +119,6 @@ export async function setShopActive(shopId: string, active: boolean): Promise<Re
   const { data, error } = await admin.from('shops').update({ is_active: active }).eq('id', shopId).select('name').single()
   if (error) return { ok: false, error: error.message }
   await recordAction(op, { action: active ? 'shop.activate' : 'shop.deactivate', product: P, summary: `${active ? 'Reactivated' : 'Deactivated'} shop "${data.name}"`, targetType: 'shop', targetId: shopId })
-  revalidatePath(`/ops/${P}/shops/${shopId}`); revalidatePath(`/ops/${P}/shops`)
   return { ok: true }
 }
 
@@ -138,7 +131,6 @@ export async function setPlatformSetting(key: string, value: unknown): Promise<R
   const { error } = await admin.from('platform_settings').update({ value, updated_by: op.userId }).eq('key', key)
   if (error) return { ok: false, error: error.message }
   await recordAction(op, { action: 'platform_setting.set', product: P, summary: `Platform setting ${key} → ${JSON.stringify(value)}`, targetType: 'platform_setting', targetId: key })
-  revalidatePath(`/ops/${P}/settings`)
   return { ok: true }
 }
 
@@ -151,25 +143,13 @@ export async function patchOperationalSettings(patch: Record<string, number>): P
   const { error } = await admin.from('operational_settings').update({ settings: { ...(cur.settings as object), ...patch }, updated_by: op.userId }).eq('id', 1)
   if (error) return { ok: false, error: error.message }
   await recordAction(op, { action: 'operational_settings.set', product: P, summary: `Operational settings: ${Object.entries(patch).map(([k, v]) => `${k}=${v}`).join(', ')}`, detail: patch })
-  revalidatePath(`/ops/${P}/settings`)
   return { ok: true }
 }
 
-/** Resolve city/country for sign-in rows lazily (free ip-api, batched). Never throws. */
+/** The map asks for this when it sees sign-ins without a place. Queues one lookup job; never blocks. */
 export async function geolocatePending(): Promise<void> {
   const op = await getOperator()
   if (!op.isStaff) return
-  const admin = createAdminClient()
-  const { data, error } = await admin.from('signin_events').select('id, ip').is('country', null).not('ip', 'is', null).order('created_at', { ascending: false }).limit(100)
-  if (error || !data?.length) return
-  try {
-    const res = await fetch('http://ip-api.com/batch?fields=status,country,regionName,city,lat,lon,query', { method: 'POST', body: JSON.stringify(data.map((r) => String(r.ip))), headers: { 'content-type': 'application/json' } })
-    if (!res.ok) return
-    const rows = (await res.json()) as { status: string; country?: string; regionName?: string; city?: string; lat?: number; lon?: number; query: string }[]
-    for (const g of rows) {
-      const hit = data.find((r) => String(r.ip) === g.query)
-      if (!hit) continue
-      await admin.from('signin_events').update(g.status === 'success' ? { country: g.country, region: g.regionName, city: g.city, lat: g.lat, lng: g.lon } : { country: '?' }).eq('id', hit.id)
-    }
-  } catch { /* next time */ }
+  const { enqueue } = await import('@/lib/jobs')
+  await enqueue('geolocate', {}, { product: P, createdBy: op.userId, maxAttempts: 2 })
 }

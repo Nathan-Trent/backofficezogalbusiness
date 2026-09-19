@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { sendMail } from '@/lib/mail'
+import { enqueue, SITE_URL } from '@/lib/jobs'
 
 /**
  * Who is told. Every event somebody can be told about, in one list; the
@@ -39,7 +39,7 @@ export async function notify(event: string, payload: { title: string; body?: str
         const { error: e2 } = await admin.from('ops_notifications').insert({ staff_id: r.staff_id, event, product: payload.product ?? null, title: payload.title, body: payload.body ?? null, link: payload.link ?? null })
         if (e2) console.error('bell insert failed:', e2.message)
       }
-      if (r.email) await sendMail({ to: r.staff.email, subject: payload.title, text: [payload.body, payload.link].filter(Boolean).join('\n\n') || payload.title, identity: (payload.product as string | null) ?? 'business' })
+      if (r.email) await enqueue('send_email', { to: r.staff.email, subject: payload.title, text: [payload.body, payload.link ? `${SITE_URL}${payload.link}` : null].filter(Boolean).join('\n\n') || payload.title, identity: (payload.product as string | null) ?? 'business' }, { product: payload.product ?? null })
     }
   } catch (e) { console.error('notify threw:', e) }
 }

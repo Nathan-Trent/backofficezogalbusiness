@@ -1,6 +1,5 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { assertCap, getOperator } from '@/lib/auth/operator'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { recordAction } from '@/lib/audit'
@@ -30,7 +29,6 @@ export async function setSecret(input: { product: string; key: string; value: st
   const where = input.product || 'company'
   await recordAction(op, { action: 'secret.set', product: input.product || null, summary: `Set key ${input.key} (${where}) — ends …${value.slice(-4)}`, targetType: 'secret', targetId: `${where}/${input.key}` })
   await notify(input.product ? `${input.product}.settings` : 'company.settings', { title: `Key ${input.key} changed`, body: `${where} · by ${op.name ?? op.email}`, link: input.product ? `/ops/${input.product}/settings` : '/ops/keys', product: input.product || null })
-  revalidatePath(input.product ? `/ops/${input.product}/settings` : '/ops/keys')
   return { ok: true }
 }
 
@@ -41,6 +39,5 @@ export async function clearSecret(input: { product: string; key: string }): Prom
   if (error) return { ok: false, error: error.message }
   const where = input.product || 'company'
   await recordAction(op, { action: 'secret.clear', product: input.product || null, summary: `Cleared key ${input.key} (${where})`, targetType: 'secret', targetId: `${where}/${input.key}` })
-  revalidatePath(input.product ? `/ops/${input.product}/settings` : '/ops/keys')
   return { ok: true }
 }

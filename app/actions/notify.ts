@@ -1,6 +1,5 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { getOperator } from '@/lib/auth/operator'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { recordAction } from '@/lib/audit'
@@ -13,7 +12,7 @@ export async function markBellRead(): Promise<void> {
 }
 
 /** Root sets who is told: one row per (staff, event). */
-export async function setNotify(staffId: string, event: string, channel: 'email' | 'bell', on: boolean): Promise<{ ok: boolean; error?: string }> {
+export async function setNotify(staffId: string, event: string, channel: 'email' | 'bell', on: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
   const op = await getOperator()
   if (!op.isRoot) return { ok: false, error: 'Root only' }
   const admin = createAdminClient()
@@ -25,6 +24,5 @@ export async function setNotify(staffId: string, event: string, channel: 'email'
     : await admin.from('ops_notify').delete().eq('staff_id', staffId).eq('event', event)
   if (error) return { ok: false, error: error.message }
   await recordAction(op, { action: 'notify.set', summary: `Who is told: ${event} ${channel} ${on ? 'on' : 'off'} for staff ${staffId}`, targetType: 'staff', targetId: staffId })
-  revalidatePath('/ops/notify')
   return { ok: true }
 }
