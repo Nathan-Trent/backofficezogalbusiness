@@ -51,6 +51,7 @@ export const TABLES: TableDef[] = [
   { name: 'impersonations', cap: 'doka.users.impersonate', order: { column: 'started_at', limit: 200 } },
   // Doka — finance
   { name: 'pricing_plans', cap: 'public' },
+  { name: 'feature_catalogue', cap: 'public', key: ['product', 'key'] },
   { name: 'pricing_plans_draft', cap: 'doka.finance.view' },
   { name: 'catalogue_publish', cap: 'doka.finance.view', order: { column: 'version', limit: 50 } },
   { name: 'invoices', cap: 'doka.finance.view', order: { column: 'created_at', limit: 500 } },

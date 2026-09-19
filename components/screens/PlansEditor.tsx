@@ -5,16 +5,43 @@ import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ops/ConfirmDialog'
 import { Section } from '@/components/ops/layout'
 import { deletePlanDraft, discardPlanDrafts, publishPlans, savePlanDraft } from '@/app/actions/finance'
+import { useTable } from '@/lib/store/OpsStore'
+
+/**
+ * A plan's entitlements (0027): one row per catalogue feature.
+ *   toggle → on/off;  count → on/off + max at once;  quota → on/off + N per day/week/month/year.
+ * Empty quantity = unlimited. The plan's marketing bullet list is generated
+ * from this by the database, so the site can never promise an ungated thing.
+ */
+export interface Entitlement { enabled: boolean; quantity?: number | null; period?: 'day' | 'week' | 'month' | 'year' | null }
+export type Entitlements = Record<string, Entitlement>
+export interface Feature { product: string; key: string; name: string; description: string; kind: 'toggle' | 'count' | 'quota'; unit: string | null; sort_order: number }
 
 export interface PlanRow {
   id: string; key: string; name: string; tagline: string | null; price_monthly: number | string; price_yearly: number | string | null; currency: string
-  features: string[]; limits: Record<string, number>; highlight: boolean; is_visible: boolean; sort_order: number; updated_at: string
+  features: string[]; limits: Record<string, number>; entitlements: Entitlements; highlight: boolean; is_visible: boolean; sort_order: number; updated_at: string
 }
 
-const LIMIT_KEYS: { key: string; label: string; help: string }[] = [
-  { key: 'terminals', label: 'Terminals', help: 'Active computers per shop. Empty = unlimited.' },
-  { key: 'staff', label: 'Staff', help: 'Active people per shop, owner included. Empty = unlimited.' },
-]
+const PERIODS = ['day', 'week', 'month', 'year'] as const
+
+const entOf = (e: Entitlements | undefined, key: string): Entitlement => {
+  const x = e?.[key]
+  return x ? { enabled: x.enabled !== false, quantity: x.quantity ?? null, period: x.period ?? null } : { enabled: true, quantity: null, period: null }
+}
+
+/** Same wording the database generates for the plan's bullet list. */
+function label(f: Feature, e: Entitlement): string {
+  if (!e.enabled) return 'off'
+  if (f.kind === 'toggle') return 'on'
+  const unit = f.unit ?? ''
+  if (e.quantity == null) return `unlimited ${unit}`
+  const noun = e.quantity === 1 ? unit.replace(/s$/, '') : unit
+  return f.kind === 'quota' ? `${e.quantity} ${noun} a ${e.period ?? 'month'}` : `${e.quantity} ${noun}`
+}
+
+function summary(features: Feature[], e: Entitlements | undefined): string {
+  return features.map((f) => `${f.name.toLowerCase()} ${label(f, entOf(e, f.key))}`).join(' · ')
+}
 
 const naira = (v: number | string | null) => v === null ? '—' : `₦${Number(v).toLocaleString()}`
 
@@ -25,6 +52,7 @@ export function PlansEditor({ draft, live, canPublish }: { draft: PlanRow[]; liv
   const [discarding, setDiscarding] = useState(false)
   const [note, setNote] = useState('')
   const [pending, start] = useTransition()
+  const features = [...useTable<Feature>('feature_catalogue')].filter((f) => f.product === 'doka').sort((a, b) => a.sort_order - b.sort_order)
   const liveById = new Map(live.map((p) => [p.id, p]))
   const draftIds = new Set(draft.map((p) => p.id))
   const changed = draft.filter((p) => { const l = liveById.get(p.id); return !l || fingerprint(l) !== fingerprint(p) })
@@ -50,8 +78,8 @@ export function PlansEditor({ draft, live, canPublish }: { draft: PlanRow[]; liv
                     {l && isChanged && <span className="pill pill-warn">changed</span>}
                   </div>
                   <div style={{ color: 'var(--app-text-muted)', fontSize: 12 }}>
-                    {LIMIT_KEYS.map((k) => `${k.label}: ${p.limits?.[k.key] ?? '∞'}`).join(' · ')} · {(p.features ?? []).length} feature lines
-                    {l && isChanged && <> · live: {naira(l.price_monthly)}/mo, {LIMIT_KEYS.map((k) => `${l.limits?.[k.key] ?? '∞'}`).join('/')}</>}
+                    {summary(features, p.entitlements)}
+                    {l && isChanged && <div>live: {naira(l.price_monthly)}/mo · {summary(features, l.entitlements)}</div>}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
@@ -79,8 +107,8 @@ export function PlansEditor({ draft, live, canPublish }: { draft: PlanRow[]; liv
 
       <Section title="Live now" note="What the Doka app's Subscription page and business.getzogal.com/doka show.">
         <div style={{ display: 'grid', gap: 6, fontSize: 13 }}>
-          {live.filter((p) => p.is_visible).map((p) => <div key={p.id}><b>{p.name}</b> <span className="tabular">{naira(p.price_monthly)}/mo</span> <span style={{ color: 'var(--app-text-muted)' }}>· {LIMIT_KEYS.map((k) => `${k.label.toLowerCase()} ${p.limits?.[k.key] ?? '∞'}`).join(', ')}</span></div>)}
-          {live.filter((p) => p.is_visible).length === 0 && <span style={{ color: 'var(--app-text-muted)' }}>Nothing live — shops fall back to no limits.</span>}
+          {live.filter((p) => p.is_visible).map((p) => <div key={p.id}><b>{p.name}</b> <span className="tabular">{naira(p.price_monthly)}/mo</span> <span style={{ color: 'var(--app-text-muted)' }}>· {summary(features, p.entitlements)}</span></div>)}
+          {live.filter((p) => p.is_visible).length === 0 && <span style={{ color: 'var(--app-text-muted)' }}>Nothing live — shops fall back to everything on, unlimited.</span>}
         </div>
       </Section>
 
@@ -104,28 +132,44 @@ export function PlansEditor({ draft, live, canPublish }: { draft: PlanRow[]; liv
 }
 
 function fingerprint(p: PlanRow): string {
-  return JSON.stringify([p.key, p.name, p.tagline ?? '', Number(p.price_monthly), p.price_yearly === null ? null : Number(p.price_yearly), p.features ?? [], p.limits ?? {}, p.highlight, p.is_visible, p.sort_order])
+  return JSON.stringify([p.key, p.name, p.tagline ?? '', Number(p.price_monthly), p.price_yearly === null ? null : Number(p.price_yearly), p.entitlements ?? {}, p.highlight, p.is_visible, p.sort_order])
 }
 
+/** Per-feature editor row state: quantity kept as typed so the box can be empty (= unlimited). */
+type EntDraft = { enabled: boolean; quantity: string; period: 'day' | 'week' | 'month' | 'year' }
+
 function PlanForm({ plan, nextOrder, onClose }: { plan: PlanRow | null; nextOrder: number; onClose: (saved: boolean) => void }) {
+  const features = [...useTable<Feature>('feature_catalogue')].filter((f) => f.product === 'doka').sort((a, b) => a.sort_order - b.sort_order)
   const [f, setF] = useState({
     key: plan?.key ?? '', name: plan?.name ?? '', tagline: plan?.tagline ?? '',
     monthly: plan ? String(plan.price_monthly) : '', yearly: plan?.price_yearly != null ? String(plan.price_yearly) : '',
-    features: (plan?.features ?? []).join('\n'),
-    limits: Object.fromEntries(LIMIT_KEYS.map((k) => [k.key, plan?.limits?.[k.key] != null ? String(plan.limits[k.key]) : ''])) as Record<string, string>,
     highlight: plan?.highlight ?? false, visible: plan?.is_visible ?? true, order: String(plan?.sort_order ?? nextOrder),
   })
+  const [ents, setEnts] = useState<Record<string, EntDraft>>(() => Object.fromEntries(features.map((ft) => {
+    const e = entOf(plan?.entitlements, ft.key)
+    return [ft.key, { enabled: e.enabled, quantity: e.quantity == null ? '' : String(e.quantity), period: e.period ?? 'month' }]
+  })))
   const [pending, start] = useTransition()
   const set = (k: keyof typeof f, v: unknown) => setF((s) => ({ ...s, [k]: v }))
+  const setEnt = (key: string, patch: Partial<EntDraft>) => setEnts((s) => ({ ...s, [key]: { ...(s[key] ?? { enabled: true, quantity: '', period: 'month' }), ...patch } }))
+  const toEntitlements = (): Entitlements => Object.fromEntries(features.map((ft) => {
+    const d = ents[ft.key] ?? { enabled: true, quantity: '', period: 'month' }
+    return [ft.key, {
+      enabled: d.enabled,
+      quantity: ft.kind === 'toggle' || d.quantity.trim() === '' ? null : Number(d.quantity),
+      period: ft.kind === 'quota' ? d.period : null,
+    }]
+  }))
   const submit = () => start(async () => {
     const r = await savePlanDraft({
       ...(plan ? { id: plan.id } : {}), key: f.key.trim(), name: f.name, tagline: f.tagline || null,
       price_monthly: Number(f.monthly), price_yearly: f.yearly.trim() === '' ? null : Number(f.yearly),
-      features: f.features.split('\n'), limits: Object.fromEntries(Object.entries(f.limits).map(([k, v]) => [k, v.trim() === '' ? null : Number(v)])),
+      entitlements: toEntitlements(),
       highlight: f.highlight, is_visible: f.visible, sort_order: Number(f.order) || 0,
     })
     if (r.ok) { toast.success('Saved to draft'); onClose(true) } else toast.error(r.error)
   })
+  const preview = features.map((ft) => { const e = entOf(toEntitlements(), ft.key); return e.enabled ? label(ft, e) : null }).filter(Boolean)
   const row = (label: string, help: string, input: React.ReactNode) => (
     <label style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: 12, alignItems: 'start', fontSize: 13 }}>
       <span><b>{label}</b><div style={{ color: 'var(--app-text-muted)', fontSize: 12 }}>{help}</div></span>{input}
@@ -139,8 +183,35 @@ function PlanForm({ plan, nextOrder, onClose }: { plan: PlanRow | null; nextOrde
         {row('Tagline', 'One line under the name.', <input className="ops-input" value={f.tagline} onChange={(e) => set('tagline', e.target.value)} placeholder="For one shop with a few computers" />)}
         {row('Price per month', 'Naira. 0 = free.', <input className="ops-input" inputMode="decimal" value={f.monthly} onChange={(e) => set('monthly', e.target.value)} placeholder="5000" />)}
         {row('Price per year', 'Naira. Empty = no yearly option.', <input className="ops-input" inputMode="decimal" value={f.yearly} onChange={(e) => set('yearly', e.target.value)} placeholder="50000" />)}
-        {LIMIT_KEYS.map((k) => <span key={k.key}>{row(k.label, k.help, <input className="ops-input" inputMode="numeric" style={{ width: 120 }} value={f.limits[k.key]} onChange={(e) => set('limits', { ...f.limits, [k.key]: e.target.value })} placeholder="∞" />)}</span>)}
-        {row('Features', 'One per line, shown as the plan’s list.', <textarea className="ops-input" value={f.features} onChange={(e) => set('features', e.target.value)} placeholder={'Unlimited items\n2 computers\nNotebook reading'} />)}
+        <div style={{ display: 'grid', gap: 6, fontSize: 13 }}>
+          <b>What this plan includes</b>
+          <div style={{ color: 'var(--app-text-muted)', fontSize: 12 }}>Every feature Doka can gate. Switch it off, or set how many — empty means unlimited. Enforced by the server and, through the signed token, on terminals even when they are offline.</div>
+          <div style={{ display: 'grid', gap: 4 }}>
+            {features.map((ft) => {
+              const d = ents[ft.key] ?? { enabled: true, quantity: '', period: 'month' as const }
+              return (
+                <div key={ft.key} style={{ display: 'grid', gridTemplateColumns: '28px 1fr auto', gap: 10, alignItems: 'center', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--r-md)' }}>
+                  <input type="checkbox" checked={d.enabled} onChange={(e) => setEnt(ft.key, { enabled: e.target.checked })} aria-label={`${ft.name} included`} />
+                  <span><b>{ft.name}</b><div style={{ color: 'var(--app-text-muted)', fontSize: 12 }}>{ft.description}</div></span>
+                  {ft.kind !== 'toggle' && d.enabled && (
+                    <span style={{ display: 'flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' }}>
+                      <input className="ops-input" inputMode="numeric" style={{ width: 80 }} value={d.quantity} onChange={(e) => setEnt(ft.key, { quantity: e.target.value })} placeholder="∞" aria-label={`${ft.name} limit`} />
+                      <span style={{ color: 'var(--app-text-muted)' }}>{ft.unit}</span>
+                      {ft.kind === 'quota' && (
+                        <select className="ops-input" value={d.period} onChange={(e) => setEnt(ft.key, { period: e.target.value as EntDraft['period'] })} aria-label={`${ft.name} period`}>
+                          {PERIODS.map((p) => <option key={p} value={p}>per {p}</option>)}
+                        </select>
+                      )}
+                    </span>
+                  )}
+                  {(ft.kind === 'toggle' || !d.enabled) && <span style={{ color: 'var(--app-text-muted)', fontSize: 12 }}>{d.enabled ? 'included' : 'not included'}</span>}
+                </div>
+              )
+            })}
+            {features.length === 0 && <span style={{ color: 'var(--app-text-muted)' }}>Feature catalogue not loaded — has migration 0027 been applied?</span>}
+          </div>
+        </div>
+        {row('Shown as', 'The plan’s bullet list on the site and in the app — generated from the switches above.', <div style={{ fontSize: 13, color: 'var(--app-text-muted)' }}>{preview.length ? preview.join(' · ') : '—'}</div>)}
         {row('Order', 'Lower shows first.', <input className="ops-input" inputMode="numeric" style={{ width: 80 }} value={f.order} onChange={(e) => set('order', e.target.value)} />)}
         <div style={{ display: 'flex', gap: 18, fontSize: 13 }}>
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="checkbox" checked={f.highlight} onChange={(e) => set('highlight', e.target.checked)} /> Recommended (highlighted)</label>

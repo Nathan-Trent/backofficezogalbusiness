@@ -10,9 +10,12 @@ const P = 'doka'
 
 // ---- Plans: Save is a draft, Publish is the promise ------------------------
 
+/** 0027: {feature key → {enabled, quantity, period}}. The database derives `features` and `limits` from it. */
+export type PlanEntitlements = Record<string, { enabled: boolean; quantity?: number | null; period?: 'day' | 'week' | 'month' | 'year' | null }>
+
 export interface PlanDraft {
   id?: string; key: string; name: string; tagline: string | null; price_monthly: number; price_yearly: number | null
-  features: string[]; limits: Record<string, number | null>; highlight: boolean; is_visible: boolean; sort_order: number
+  entitlements: PlanEntitlements; highlight: boolean; is_visible: boolean; sort_order: number
 }
 
 function validate(p: PlanDraft): string | null {
@@ -20,7 +23,11 @@ function validate(p: PlanDraft): string | null {
   if (!p.name.trim()) return 'Name is needed'
   if (!Number.isFinite(p.price_monthly) || p.price_monthly < 0) return 'Monthly price must be 0 or more'
   if (p.price_yearly !== null && (!Number.isFinite(p.price_yearly) || p.price_yearly < 0)) return 'Yearly price must be 0 or more, or empty'
-  for (const [k, v] of Object.entries(p.limits)) if (v !== null && (!Number.isInteger(v) || v < 0)) return `Limit ${k} must be a whole number, or empty for unlimited`
+  for (const [k, e] of Object.entries(p.entitlements ?? {})) {
+    if (typeof e.enabled !== 'boolean') return `${k}: on/off missing`
+    if (e.quantity != null && (!Number.isInteger(e.quantity) || e.quantity < 0)) return `${k}: the limit must be a whole number, or empty for unlimited`
+    if (e.period != null && !['day', 'week', 'month', 'year'].includes(e.period)) return `${k}: period must be day, week, month or year`
+  }
   return null
 }
 
@@ -30,8 +37,8 @@ export async function savePlanDraft(p: PlanDraft): Promise<Result> {
   if (!op) return { ok: false, error: 'Not allowed' }
   const bad = validate(p); if (bad) return { ok: false, error: bad }
   const admin = createAdminClient()
-  const limits = Object.fromEntries(Object.entries(p.limits).filter(([, v]) => v !== null))
-  const row = { product: P, key: p.key, name: p.name.trim(), tagline: p.tagline?.trim() || null, price_monthly: p.price_monthly, price_yearly: p.price_yearly, features: p.features.map((f) => f.trim()).filter(Boolean), limits, highlight: p.highlight, is_visible: p.is_visible, sort_order: p.sort_order, updated_by: op.userId, updated_at: new Date().toISOString() }
+  // features + limits are derived by the pricing_plans_*_derived triggers (0027).
+  const row = { product: P, key: p.key, name: p.name.trim(), tagline: p.tagline?.trim() || null, price_monthly: p.price_monthly, price_yearly: p.price_yearly, entitlements: p.entitlements, highlight: p.highlight, is_visible: p.is_visible, sort_order: p.sort_order, updated_by: op.userId, updated_at: new Date().toISOString() }
   const q = p.id ? admin.from('pricing_plans_draft').update(row).eq('id', p.id).select('id').single() : admin.from('pricing_plans_draft').insert(row).select('id').single()
   const { data, error } = await q
   if (error) return { ok: false, error: error.message.includes('duplicate') ? `A plan with key "${p.key}" already exists` : error.message }
