@@ -195,24 +195,46 @@ export function Terminals() {
 }
 
 export function Users() {
-  const members = useTable<Member>('shop_members'); const users = useUsersById(); const shops = useShopsById(); const roles = useRolesById(); const owners = useOwnerByShop()
+  const users = useTable<User>('users'), members = useTable<Member>('shop_members'); const shops = useShopsById(); const roles = useRolesById(); const owners = useOwnerByShop(); const usersById = useUsersById()
   const [q, setQ] = useState('')
-  const rows = useMemo(() => members.map((m) => ({ ...m, user: users.get(m.user_id), shop: shops.get(m.shop_id), role: roles.get(m.role_id), owner: owners.get(m.shop_id) }))
-    .filter((r) => !q || [r.user?.full_name, r.user?.email, r.shop?.name].some((v) => v?.toLowerCase().includes(q.toLowerCase())))
-    .sort((a, b) => b.joined_at.localeCompare(a.joined_at)), [members, users, shops, roles, owners, q])
+  const [only, setOnly] = useState<'all' | 'noshop'>('all')
+  // Every person, not every membership: someone who signed up and never made a shop must be visible too.
+  const rows = useMemo(() => {
+    const byUser = new Map<string, Member[]>()
+    for (const m of members) byUser.set(m.user_id, [...(byUser.get(m.user_id) ?? []), m])
+    return users.map((u) => ({ u, ms: (byUser.get(u.id) ?? []).map((m) => ({ ...m, shop: shops.get(m.shop_id), role: roles.get(m.role_id), owner: owners.get(m.shop_id) })) }))
+      .filter((r) => only === 'all' || r.ms.length === 0)
+      .filter((r) => !q || [r.u.full_name, r.u.email, ...r.ms.map((m) => m.shop?.name)].some((v) => v?.toLowerCase().includes(q.toLowerCase())))
+      .sort((a, b) => b.u.created_at.localeCompare(a.u.created_at))
+  }, [users, members, shops, roles, owners, q, only])
+  const stalled = useMemo(() => users.filter((u) => !members.some((m) => m.user_id === u.id)).length, [users, members])
   return (
     <>
-      <PageTitle title="Users" subtitle="Everyone on Doka. A person can belong to more than one shop; each membership is a row." />
-      <div style={{ marginBottom: 14, maxWidth: 360 }}><input className="ops-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, email or shop…" /></div>
-      <OpsTable headers={['Person', 'Shop', 'Role', 'Linked to', 'Since', '']} empty="No users match.">
-        {rows.map((r) => (
-          <tr key={`${r.user_id}-${r.shop_id}`}>
-            <Td><A href={`/ops/doka/users/${r.user_id}`} style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>{r.user?.full_name ?? '—'}</A><div style={{ fontSize: 12, color: 'var(--app-text-muted)' }}>{r.user?.email}</div></Td>
-            <Td><A href={`/ops/doka/shops/${r.shop_id}`} style={{ color: 'inherit' }}>{r.shop?.name ?? '—'}</A></Td>
-            <Td>{r.role?.name ?? '—'}{!r.is_active && <span className="pill pill-bad" style={{ marginLeft: 8 }}>deactivated</span>}</Td>
-            <Td muted>{r.role?.key === 'owner' ? 'is the owner' : r.owner ? <A href={`/ops/doka/users/${r.owner.user_id}`} style={{ color: 'inherit' }}>{users.get(r.owner.user_id)?.full_name}</A> : '—'}</Td>
-            <Td mono muted nowrap>{when(r.joined_at, true)}</Td>
-            <Td><A href={`/ops/doka/users/${r.user_id}`} style={{ fontSize: 12.5, color: 'var(--accent)' }}>Open</A></Td>
+      <PageTitle title="Users" subtitle={`${users.length} people on Doka · ${stalled} signed up but have no shop yet`} />
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input className="ops-input" style={{ maxWidth: 360 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, email or shop…" />
+        <button type="button" className={`pill ${only === 'all' ? 'pill-good' : 'pill-plain'}`} style={{ border: 'none', cursor: 'pointer' }} onClick={() => setOnly('all')}>Everyone</button>
+        <button type="button" className={`pill ${only === 'noshop' ? 'pill-good' : 'pill-plain'}`} style={{ border: 'none', cursor: 'pointer' }} onClick={() => setOnly('noshop')}>No shop yet · {stalled}</button>
+      </div>
+      <OpsTable headers={['Person', 'Shops', 'Since', '']} empty="No users match.">
+        {rows.map(({ u, ms }) => (
+          <tr key={u.id}>
+            <Td><A href={`/ops/doka/users/${u.id}`} style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>{u.full_name}</A><div style={{ fontSize: 12, color: 'var(--app-text-muted)' }}>{u.email}</div></Td>
+            <Td>
+              {ms.length === 0 ? <span className="pill pill-warn">No shop yet</span> : (
+                <div style={{ display: 'grid', gap: 2 }}>
+                  {ms.map((m) => (
+                    <div key={m.shop_id}>
+                      <A href={`/ops/doka/shops/${m.shop_id}`} style={{ color: 'inherit', fontWeight: 600 }}>{m.shop?.name ?? '—'}</A>
+                      <span style={{ color: 'var(--app-text-muted)' }}> · {m.role?.name ?? '—'}{m.role?.key === 'owner' ? '' : m.owner ? ` · under ${usersById.get(m.owner.user_id)?.full_name ?? 'owner'}` : ''}</span>
+                      {!m.is_active && <span className="pill pill-bad" style={{ marginLeft: 8 }}>deactivated</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Td>
+            <Td mono muted nowrap>{when(u.created_at, true)}</Td>
+            <Td><A href={`/ops/doka/users/${u.id}`} style={{ fontSize: 12.5, color: 'var(--accent)' }}>Open</A></Td>
           </tr>
         ))}
       </OpsTable>
