@@ -38,6 +38,7 @@ function productCaps(p: ProductKey, name: string): CapDef[] {
     { key: `${p}.finance.edit`, label: `Edit ${name} plans and prices (as drafts)`, group: g },
     { key: `${p}.finance.publish`, label: `Publish ${name} plans so the app and site use them`, group: g, sensitive: true },
     { key: `${p}.finance.subscriptions`, label: `Give plans, extend or cancel ${name} subscriptions`, group: g, sensitive: true },
+    { key: `${p}.tax.manage`, label: `${name} tax rules — thresholds, rates and effective dates`, group: g, sensitive: true },
   ]
 }
 

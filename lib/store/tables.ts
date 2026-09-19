@@ -59,6 +59,14 @@ export const TABLES: TableDef[] = [
   { name: 'platform_settings', cap: 'doka.settings.manage', key: ['key'] },
   { name: 'platform_settings_history', cap: 'doka.settings.manage', order: { column: 'changed_at', limit: 50 } },
   { name: 'operational_settings', cap: 'doka.settings.manage' },
+  // Doka — tax (§8.1). Reference tables are public reads (any signed-in
+  // staff); the rules themselves are gated behind the sensitive switch even
+  // though RLS would technically allow any authenticated read — legal figures
+  // stay behind the door on purpose.
+  { name: 'tax_types', cap: 'public', key: ['key'] },
+  { name: 'business_categories', cap: 'public', key: ['key'] },
+  { name: 'business_category_tax_types', cap: 'public', key: ['category_key', 'tax_type_key'] },
+  { name: 'tax_rules', cap: 'doka.tax.manage' },
 ]
 
 export function keyOf(def: TableDef, row: Row): string {

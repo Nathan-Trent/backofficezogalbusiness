@@ -20,6 +20,7 @@ export const EVENTS: EventDef[] = [
   { key: 'doka.impersonation', group: 'doka', label: 'Someone signed in as a Doka user', help: 'Every impersonation, with who and why.' },
   { key: 'doka.settings', group: 'doka', label: 'A Doka key or setting changed', help: 'A payment, Anthropic or other key was set or cleared.' },
   { key: 'doka.published', group: 'doka', label: 'Doka plans published', help: 'Plans and prices went live for the app and the site.' },
+  { key: 'doka.tax', group: 'doka', label: 'A Doka tax rule changed', help: 'A new rule was added or one was confirmed.' },
   { key: 'marketing.contact', group: 'marketing', label: 'A message from the site', help: 'Someone wrote through the contact form.' },
   { key: 'marketing.published', group: 'marketing', label: 'The site was published', help: 'Someone made site changes live.' },
   { key: 'marketing.answered', group: 'marketing', label: 'A site message was answered', help: 'Someone replied from the inbox.' },

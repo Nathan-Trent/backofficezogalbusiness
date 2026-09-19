@@ -7,6 +7,7 @@ import { Inbox, SitePage } from '@/components/screens/marketing'
 import { Conflicts, WhereTheyAre, ShopDetail, Shops, Terminals, UserDetail, Users } from '@/components/screens/doka'
 import { Finance, Plans } from '@/components/screens/finance'
 import { Settings } from '@/components/screens/settings'
+import { TaxRules } from '@/components/screens/tax'
 
 /**
  * Every screen under /ops, chosen from the URL in the browser. Moving
@@ -36,6 +37,7 @@ export default function OpsPage() {
     else if (b === 'conflicts') screen = gate('doka.ops.view', <Conflicts />)
     else if (b === 'finance') screen = c === 'plans' ? gate('doka.finance.edit', <Plans />) : gate('doka.finance.view', <Finance />)
     else if (b === 'settings') screen = gate('doka.settings.manage', <Settings />)
+    else if (b === 'tax') screen = gate('doka.tax.manage', <TaxRules />)
     else screen = <NotHere />
   } else screen = <NotHere />
 

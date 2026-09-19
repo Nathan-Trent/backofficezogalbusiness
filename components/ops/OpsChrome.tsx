@@ -60,6 +60,7 @@ export function productNav(p: Product): NavGroup[] {
       { href: `/ops/${k}/finance/plans`, label: 'Plans & prices', needs: `${k}.finance.edit` },
     ] },
     { heading: 'Configure', links: [
+      { href: `/ops/${k}/tax`, label: 'Tax rules', needs: `${k}.tax.manage` },
       { href: `/ops/${k}/settings`, label: 'Settings', needs: `${k}.settings.manage` },
     ] },
   ]
