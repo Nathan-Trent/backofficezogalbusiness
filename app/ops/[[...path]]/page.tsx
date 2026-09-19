@@ -2,7 +2,8 @@
 
 import { useOpsPath } from '@/lib/nav'
 import { useCan, useOps } from '@/lib/store/OpsStore'
-import { Activity, Health, Keys, Overview, Placeholder, Staff, WhoIsTold } from '@/components/screens/company'
+import { Activity, Health, Keys, Overview, Staff, WhoIsTold } from '@/components/screens/company'
+import { Inbox, SitePage } from '@/components/screens/marketing'
 import { Conflicts, WhereTheyAre, ShopDetail, Shops, Terminals, UserDetail, Users } from '@/components/screens/doka'
 import { Finance, Plans } from '@/components/screens/finance'
 import { Settings } from '@/components/screens/settings'
@@ -26,7 +27,7 @@ export default function OpsPage() {
   else if (a === 'staff') screen = gate('root', <Staff />)
   else if (a === 'notify') screen = gate('root', <WhoIsTold />)
   else if (a === 'keys') screen = gate('root', <Keys />)
-  else if (a === 'marketing') screen = gate(b === 'inbox' ? 'marketing.inbox' : 'marketing.view', b === 'inbox' ? <Placeholder title="Inbox" text="Messages from the site's contact form arrive here in the Marketing slice." /> : b ? <Placeholder title="Doka page" text="Every word on business.getzogal.com/doka, editable here in the Marketing slice." /> : <Placeholder title="Zogal Business site" text="Site content — draft and publish — arrives in the Marketing slice." />)
+  else if (a === 'marketing') screen = b === 'inbox' ? gate('marketing.inbox', <Inbox />) : gate('marketing.view', <SitePage page={b ?? 'home'} />)
   else if (a === 'doka') {
     if (!b) screen = gate('doka.ops.view', <WhereTheyAre />)
     else if (b === 'shops') screen = gate('doka.ops.view', c ? <ShopDetail id={c} /> : <Shops />)

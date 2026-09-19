@@ -133,3 +133,16 @@ export async function ensureDailyJobs(): Promise<void> {
     if (!data?.length) await admin.from('jobs').insert({ kind, product: P, payload: { day: today }, max_attempts: 3 })
   }
 }
+
+/** Tell staff about site messages nobody has been told about yet. Runs every tick; marks each once. */
+export async function notifyNewContacts(): Promise<void> {
+  const admin = createAdminClient()
+  const { data, error } = await admin.from('contact_messages').select('id, name, email, message, product, source').is('notified_at', null).order('created_at').limit(20)
+  if (error) { console.error('contacts read:', error.message); return }
+  for (const m of data ?? []) {
+    await notify('marketing.contact', { title: `${m.name} wrote from the ${m.source} page`, body: `${m.email}
+
+${String(m.message).slice(0, 300)}`, link: '/ops/marketing/inbox', product: (m.product as string | null) ?? null })
+    await admin.from('contact_messages').update({ notified_at: new Date().toISOString() }).eq('id', m.id)
+  }
+}

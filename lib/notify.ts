@@ -22,6 +22,7 @@ export const EVENTS: EventDef[] = [
   { key: 'doka.published', group: 'doka', label: 'Doka plans published', help: 'Plans and prices went live for the app and the site.' },
   { key: 'marketing.contact', group: 'marketing', label: 'A message from the site', help: 'Someone wrote through the contact form.' },
   { key: 'marketing.published', group: 'marketing', label: 'The site was published', help: 'Someone made site changes live.' },
+  { key: 'marketing.answered', group: 'marketing', label: 'A site message was answered', help: 'Someone replied from the inbox.' },
 ]
 
 export const GROUP_TITLES = { company: 'Zogal Business', marketing: 'Marketing', doka: 'Doka' } as const

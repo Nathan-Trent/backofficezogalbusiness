@@ -193,7 +193,3 @@ export function Keys() {
     </>
   )
 }
-
-export function Placeholder({ title, text }: { title: string; text: string }) {
-  return <><PageTitle title={title} subtitle="Not built yet." /><p style={{ fontSize: 13, color: 'var(--app-text-muted)' }}>{text}</p></>
-}

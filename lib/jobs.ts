@@ -55,7 +55,7 @@ const HANDLERS: Record<JobKind, (job: Job) => Promise<Record<string, unknown> | 
 export async function runDueJobs(limit = 20): Promise<{ ran: number; failed: number }> {
   const admin = createAdminClient()
   // Daily billing work is queued by the runner itself, so a schedule that only says "tick" is enough.
-  try { const { ensureDailyJobs } = await import('@/lib/billing'); await ensureDailyJobs() } catch (e) { console.error('ensureDailyJobs:', e) }
+  try { const { ensureDailyJobs, notifyNewContacts } = await import('@/lib/billing'); await ensureDailyJobs(); await notifyNewContacts() } catch (e) { console.error('tick work:', e) }
   const { data, error } = await admin.rpc('claim_jobs', { p_limit: limit })
   if (error) { console.error('claim_jobs:', error.message); return { ran: 0, failed: 0 } }
   let failed = 0

@@ -31,6 +31,11 @@ export const TABLES: TableDef[] = [
   { name: 'ops_audit_log', cap: 'company.audit.view', order: { column: 'created_at', limit: 500 } },
   { name: 'ops_notify', cap: 'root', key: ['staff_id', 'event'] },
   { name: 'jobs', cap: 'company.health.view', order: { column: 'created_at', limit: 200 } },
+  // Marketing
+  { name: 'site_content', cap: 'public', key: ['page', 'key'] },
+  { name: 'site_content_draft', cap: 'marketing.view', key: ['page', 'key'] },
+  { name: 'site_publish', cap: 'marketing.view', order: { column: 'published_at', limit: 50 } },
+  { name: 'contact_messages', cap: 'marketing.inbox', order: { column: 'created_at', limit: 500 } },
   // Doka — operations
   { name: 'shops', cap: 'doka.ops.view' },
   { name: 'subscriptions', cap: 'doka.ops.view', key: ['shop_id'] },
