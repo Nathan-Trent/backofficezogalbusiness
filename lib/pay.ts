@@ -32,6 +32,14 @@ export async function invoiceForUser(authHeader: string | null, invoiceId: strin
   return { invoice: { ...(data as Invoice), amount: Number(data.amount) }, email: u.user.email }
 }
 
+/** The provider that is switched ON in Doka → Settings → Payments. Keys alone mean nothing. */
+export async function activeProvider(): Promise<Provider | null> {
+  const { data, error } = await createAdminClient().from('platform_settings').select('value').eq('key', 'payments.provider').maybeSingle()
+  if (error) { console.error('payments.provider read failed:', error.message); return null }
+  const v = data?.value
+  return v === 'paystack' || v === 'flutterwave' ? v : null
+}
+
 // ---- Start a checkout ------------------------------------------------------
 
 export async function startCheckout(provider: Provider, inv: Invoice, email: string): Promise<{ url: string; reference: string } | { error: string }> {
