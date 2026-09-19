@@ -40,6 +40,47 @@ export async function activeProvider(): Promise<Provider | null> {
   return v === 'paystack' || v === 'flutterwave' ? v : null
 }
 
+/**
+ * Self-service plan change (Nathan, 2026-09-20: "today Zogal raises the
+ * invoice" — parked until now). The owner picks a live plan from their own
+ * dashboard; this raises a normal one-month invoice for it under their own
+ * shop, the same way a staff-raised one works, then starts a checkout
+ * straight away so choosing a plan and paying is one flow, not two.
+ * Nothing here changes the subscription itself — apply_payment() does that,
+ * once the invoice is actually paid, exactly as with any other invoice.
+ */
+export async function selfServiceInvoice(authHeader: string | null, shopId: string, planKey: string): Promise<{ invoice: Invoice; email: string } | { error: string; status: number }> {
+  if (!authHeader?.startsWith('Bearer ')) return { error: 'Sign in first', status: 401 }
+  const asUser = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { global: { headers: { Authorization: authHeader } }, auth: { persistSession: false } })
+  const { data: u, error: uErr } = await asUser.auth.getUser()
+  if (uErr || !u.user?.email) return { error: 'Sign in first', status: 401 }
+  const { data: allowed, error: pErr } = await asUser.rpc('has_permission', { p_shop_id: shopId, p_permission: 'shop.settings' })
+  if (pErr) return { error: pErr.message, status: 500 }
+  if (!allowed) return { error: 'Not allowed for this shop', status: 403 }
+
+  const admin = createAdminClient()
+  const { data: plan, error: planErr } = await admin.from('pricing_plans').select('key, name, price_monthly, currency').eq('product', 'doka').eq('key', planKey).eq('is_visible', true).maybeSingle()
+  if (planErr) return { error: planErr.message, status: 500 }
+  if (!plan) return { error: 'That plan is not available right now', status: 400 }
+
+  const { data: shop, error: shopErr } = await admin.from('shops').select('name').eq('id', shopId).maybeSingle()
+  if (shopErr) return { error: shopErr.message, status: 500 }
+
+  const start = new Date(); start.setUTCHours(0, 0, 0, 0)
+  const end = new Date(start); end.setUTCMonth(end.getUTCMonth() + 1); end.setUTCDate(end.getUTCDate() - 1)
+  const { data: number, error: nErr } = await admin.rpc('next_invoice_number', { p_product: 'doka' })
+  if (nErr) return { error: nErr.message, status: 500 }
+  const { data: inv, error } = await admin.from('invoices').insert({
+    number, product: 'doka', shop_id: shopId, plan_key: plan.key,
+    period_start: start.toISOString().slice(0, 10), period_end: end.toISOString().slice(0, 10),
+    amount: Number(plan.price_monthly), currency: plan.currency,
+  }).select('id, number, product, shop_id, amount, currency, status, period_end').single()
+  if (error) return { error: error.message, status: 500 }
+
+  await notify('doka.subscription', { title: `${shop?.name ?? shopId}: requested ${plan.name}`, body: `Invoice ${inv.number} raised — ₦${Number(inv.amount).toLocaleString()}, awaiting payment.`, link: `/ops/doka/shops/${shopId}`, product: 'doka' })
+  return { invoice: { ...(inv as Invoice), amount: Number(inv.amount) }, email: u.user.email }
+}
+
 // ---- Start a checkout ------------------------------------------------------
 
 export async function startCheckout(provider: Provider, inv: Invoice, email: string): Promise<{ url: string; reference: string } | { error: string }> {
