@@ -150,6 +150,15 @@ export async function patchOperationalSettings(patch: Record<string, number>): P
 export async function geolocatePending(): Promise<void> {
   const op = await getOperator()
   if (!op.isStaff) return
-  const { enqueue } = await import('@/lib/jobs')
-  await enqueue('geolocate', {}, { product: P, createdBy: op.userId, maxAttempts: 2 })
+  // Do it here, now: one batched lookup of ≤100 rows. The map must not wait
+  // on a scheduler that may not be configured yet (QStash / JOBS_SECRET);
+  // the pushed row updates light it up the moment they land.
+  try {
+    const { geolocateBatch } = await import('@/lib/geo')
+    await geolocateBatch()
+  } catch (e) {
+    console.error('inline geolocate failed, queuing:', e instanceof Error ? e.message : e)
+    const { enqueue } = await import('@/lib/jobs')
+    await enqueue('geolocate', {}, { product: P, createdBy: op.userId, maxAttempts: 2 })
+  }
 }
